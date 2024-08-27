@@ -1,85 +1,66 @@
-#include <iostream>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
+using System;
+using System.Threading;
 
-class LectoresEscritores {
-public:
-    LectoresEscritores() : lectores(0), escritor_activo(false) {}
+class LectoresEscritores
+{
+    private ReaderWriterLockSlim lockSlim = new ReaderWriterLockSlim();
+    private int lectores = 0;
 
-    void leer() {
-        std::unique_lock<std::mutex> lock(mtx);
-        // Esperar hasta que no haya escritores activos
-        cv_lectores.wait(lock, [this]() { return !escritor_activo; });
-        ++lectores;
-        lock.unlock();
-
-        // Realizar la lectura
-        std::cout << "Leyendo... (Lectores activos: " << lectores << ")\n";
-
-        lock.lock();
-        --lectores;
-        if (lectores == 0) {
-            cv_escritores.notify_one(); // Notificar a escritores si ninguno está leyendo
+    public void Leer()
+    {
+        lockSlim.EnterReadLock();
+        try
+        {
+            Console.WriteLine($"Leyendo... (Lectores activos: {Interlocked.Increment(ref lectores)})");
+            Thread.Sleep(100);
         }
-        lock.unlock();
+        finally
+        {
+            Interlocked.Decrement(ref lectores);
+            lockSlim.ExitReadLock();
+        }
     }
 
-    void escribir() {
-        std::unique_lock<std::mutex> lock(mtx);
-        // Esperar hasta que no haya lectores ni escritores activos
-        cv_escritores.wait(lock, [this]() { return !escritores_activos() && !escritor_activo; });
-        escritor_activo = true;
-        lock.unlock();
-
-        // Realizar la escritura
-        std::cout << "Escribiendo...\n";
-
-        lock.lock();
-        escritor_activo = false;
-        cv_lectores.notify_all(); // Notificar a los lectores
-        cv_escritores.notify_one(); // Notificar a un escritor en espera
-        lock.unlock();
+    public void Escribir()
+    {
+        lockSlim.EnterWriteLock();
+        try
+        {
+            Console.WriteLine("Escribiendo...");
+            Thread.Sleep(100);
+        }
+        finally
+        {
+            lockSlim.ExitWriteLock();
+        }
     }
-
-private:
-    std::mutex mtx;
-    std::condition_variable cv_lectores;
-    std::condition_variable cv_escritores;
-    int lectores;
-    bool escritor_activo;
-
-    bool escritores_activos() {
-        return escritor_activo;
-    }
-};
-
-void funcion_lector(LectoresEscritores& recurso) {
-    recurso.leer();
 }
 
-void funcion_escritor(LectoresEscritores& recurso) {
-    recurso.escribir();
-}
+class Program
+{
+    static void Main()
+    {
+        LectoresEscritores recurso = new LectoresEscritores();
 
-int main() {
-    LectoresEscritores recurso;
+        // Crear y ejecutar hilos de lectores
+        Thread lector1 = new Thread(() => recurso.Leer());
+        Thread lector2 = new Thread(() => recurso.Leer());
+        Thread lector3 = new Thread(() => recurso.Leer());
 
-    // Crear hilos de lectores
-    std::thread lector1(funcion_lector, std::ref(recurso));
-    std::thread lector2(funcion_lector, std::ref(recurso));
-    std::thread lector3(funcion_lector, std::ref(recurso));
+        Thread escritor1 = new Thread(() => recurso.Escribir());
+        Thread escritor2 = new Thread(() => recurso.Escribir());
 
-    // Crear hilos de escritores
-    std::thread escritor1(funcion_escritor, std::ref(recurso));
-    std::thread escritor2(funcion_escritor, std::ref(recurso));
+        lector1.Start();
+        lector2.Start();
+        lector3.Start();
 
-    // Unir los hilos
-    lector1.join();
-    lector2.join();
-    lector3.join();
-    escritor1.join();
-    escritor2.join();
-
-    return 0;
+        escritor1.Start();
+        escritor2.Start();
+        
+        lector1.Join();
+        lector2.Join();
+        lector3.Join();
+        escritor1.Join();
+        escritor2.Join();
+    }
 }
